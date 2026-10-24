@@ -2339,4 +2339,86 @@ class SpbTest {
 </body>
 </html>
 ````
+2. Unpack and build
+Download this page's raw file (Raw → Download raw file) and split_source.py.
+On a computer with Python 3: python3 split_source.py "Offline Safety Mode.md" rsis-native-android It writes all 29 project files to their paths. The website/ file is for your website, not the Android project.
+Commit the contents of rsis-native-android/ to the root of this repository, keeping the hidden .github/workflows/build-apk.yml. (The script was tested: output is identical to the zip.)
+Open Actions → build-apk → Run workflow.
+The first run will probably fail, because this code has never been compiled. Copy the red error lines and bring them to Claude for fixes.
+On success, download the rsis-debug-apk artifact and note the SHA-256 in the run summary.
+Install on two physical Android phones and run the two-phone tests in UPGRADE-build5.md.
 
+After unpacking, move this page to docs/ or delete it. Two copies of the code will drift apart.
+
+3. Where the project stands (build 5)
+Item	Status
+Compiled	No
+Run on a device	No
+Unit tests run	No
+CI workflow tested	No
+Pairing against the real server	No. PairingContract is unverified
+Offline detection between two phones	Not yet tested
+Real Bluetooth company ID	No. 0xFFFF is a test value
+4. Decisions that still need a human
+Bluetooth company ID. Register a real one before any public release.
+PairingContract. Check the path, field names and key header against the real nativePair and syncNativeEvent.
+Anonymity versus abuse control. install_id and the key are random and re-issued every 7 days. Longer linkage means stronger abuse control and weaker anonymity. This is a product decision.
+Same-user linking across 3-second token changes is a distance-continuity guess. Test with two real riders.
+Physics thresholds (8 s time-to-collision, Orange at 0.6, approaching above 1 mph) are uncalibrated heuristics.
+Event role is the local user's role. Confirm the server expects that.
+5. Safety of the repository
+This repository is public. It contains no keys, but never commit a keystore, a key, or a password.
+Debug APKs from CI use a known signing key. Use them only for your own test phones.
+Do not tell users they are protected until the two-phone tests have passed.
+6. Rules that must not be relaxed
+Never report running unless both radios are active.
+No simulated detections, random risk scores, or placeholder alerts.
+One physical event, one user-facing alert path.
+Sensing ranges are never alert radii.
+Android only. iPhone is not offered offline.
+!/usr/bin/env python3
+"""Unpack 'Offline Safety Mode.md' (the one-page source) into the real project folder tree.
+ 
+Usage:   python3 split_source.py "Offline Safety Mode.md" rsis-native-android
+Result:  every file under its own path, ready to commit. Files under website/ belong to your website, not Android.
+Needs only Python 3. Refuses to write outside the output folder.
+"""
+import os, re, sys
+ 
+def main(src, out):
+    lines = open(src, encoding="utf-8").read().split("\n")
+    head = re.compile(r"^## `([^`]+)`\s*$")
+    n = 0
+    i = 0
+    while i < len(lines):
+        m = head.match(lines[i])
+        if not m:
+            i += 1; continue
+        path = m.group(1)
+        i += 1
+        # find the opening code fence for this heading
+        while i < len(lines) and not re.match(r"^`{3,}", lines[i]):
+            if head.match(lines[i]): break
+            i += 1
+        if i >= len(lines) or not re.match(r"^`{3,}", lines[i]):
+            continue  # heading without code (e.g. the index)
+        fence = re.match(r"^(`{3,})", lines[i]).group(1)
+        i += 1
+        body = []
+        while i < len(lines) and lines[i].strip() != fence:
+            body.append(lines[i]); i += 1
+        i += 1
+        dest = os.path.normpath(os.path.join(out, path))
+        if not os.path.abspath(dest).startswith(os.path.abspath(out) + os.sep):
+            print("skipped unsafe path:", path); continue
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with open(dest, "w", encoding="utf-8", newline="\n") as f:
+            f.write("\n".join(body) + "\n")
+        n += 1
+        print("wrote", dest)
+    print(f"\n{n} files written to {out}")
+ 
+if __name__ == "__main__":
+    if len(sys.argv) != 3:
+        sys.exit(__doc__)
+    main(sys.argv[1], sys.argv[2])
